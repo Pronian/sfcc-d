@@ -1,29 +1,35 @@
 import { load } from "https://deno.land/std@0.217.0/dotenv/mod.ts";
+import { parseArgs } from "https://deno.land/std@0.217.0/cli/parse_args.ts";
 
 const env = await load();
 const SF_API_ID = env.SF_API_ID;
 const SF_API_SECRET = env.SF_API_SECRET;
 
-function useCachedResult<T>(
-	result: T,
+const args = parseArgs(Deno.args);
+const verbose = args.v || args.verbose;
+
+async function useCachedResult<T>(
+	result: () => Promise<T>,
 	storageKey: string,
 	maxDuration: Temporal.Duration,
+	invalidate: boolean = false,
 ) {
 	const cachedResult = localStorage.getItem(storageKey);
-	if (cachedResult) {
+	if (!invalidate && cachedResult) {
 		const { value, exp } = JSON.parse(cachedResult) as {value: T, exp: number};
-		console.log(`Retrieved ${storageKey} from cache. Exp: ${Temporal.Instant.fromEpochMilliseconds(exp).toString()}`);
+		verbose && console.log(`Retrieved ${storageKey} from cache. Exp: ${Temporal.Instant.fromEpochMilliseconds(exp).toString()}`);
 		if (Date.now() < exp) return value;
 	}
-	let instant = Temporal.Now.instant();
+	let instant = Temporal.Instant.fromEpochMilliseconds(Date.now());
 	instant = instant.add(maxDuration);
+	const resultValue = await result();
 	localStorage.setItem(
 		storageKey,
-		JSON.stringify({ value: result, exp: instant.epochMilliseconds }),
+		JSON.stringify({ value: resultValue, exp: instant.epochMilliseconds }),
 	);
-	console.log(`Cached ${storageKey}. Exp: ${instant.toString()}`);
+	verbose && console.log(`Cached ${storageKey}. Exp: ${instant.toString()}`);
 
-	return result;
+	return resultValue;
 }
 
 async function getSfccAuthToken(): Promise<string> {
@@ -47,8 +53,81 @@ async function getSfccAuthToken(): Promise<string> {
 	return json.access_token;
 }
 
-const sfccAuthToken = useCachedResult(
-	await getSfccAuthToken(),
-	"sfccAuthToken",
-	Temporal.Duration.from({ minutes: 29, seconds: 55 }),
-);
+type SandboxInfo = {
+	id: string,
+	realm: string,
+	instance: string,
+	versions: {
+		app: string,
+		web: string
+	},
+	resourceProfile: string,
+	state: string,
+	createdAt: string,
+	createdBy: string,
+	hostName: string,
+	links: {
+		bm: string,
+		ocapi: string,
+		impex: string,
+		code: string,
+		logs: string
+	}
+};
+
+async function getSandboxList(sfccAuthToken: string): Promise<SandboxInfo[]>{
+	const res = await fetch(
+		"https://admin.dx.commercecloud.salesforce.com/api/v1/sandboxes?include_deleted=false",
+		{
+			headers: {
+				Authorization: `Bearer ${sfccAuthToken}`,
+				Accept: "application/json",
+			}
+		}
+	);
+	const resJson = await res.json();
+
+	if (resJson.code === 200) {
+		resJson.data.sort((a: SandboxInfo, b: SandboxInfo) => a.hostName.localeCompare(b.hostName));
+		return resJson.data;
+	} else {
+		console.error('Failed to retrieve sandbox list:', resJson.code, resJson.error.message);
+		Deno.exit(1);
+	}
+}
+
+let sfccAuthToken: string;
+
+async function updateToken() {
+	sfccAuthToken = await useCachedResult(
+		getSfccAuthToken,
+		"sfccAuthToken",
+		Temporal.Duration.from({ minutes: 29, seconds: 55 }),
+	);
+}
+
+let sandboxList: SandboxInfo[];
+async function updateSandboxList(invalidate: boolean = false) {
+	sandboxList = await useCachedResult(
+		() => getSandboxList(sfccAuthToken),
+		"sandboxList",
+		Temporal.Duration.from({ hours: 24 * 14 }), // Workaround for bug in Temporal.Duration
+		invalidate
+	);
+}
+
+async function run() {
+	await updateToken();
+
+	if (args._.includes('list')) {
+		await updateSandboxList(true);
+
+		const sandboxInfoLine = sandboxList.map((sb) => [sb.id, sb.hostName, sb.state].join('|')).join('\n');
+		console.log(sandboxInfoLine);
+		return;
+	}
+
+	await updateSandboxList();
+}
+
+run();
