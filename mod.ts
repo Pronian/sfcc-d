@@ -16,8 +16,16 @@ async function useCachedResult<T>(
 ) {
 	const cachedResult = localStorage.getItem(storageKey);
 	if (!invalidate && cachedResult) {
-		const { value, exp } = JSON.parse(cachedResult) as {value: T, exp: number};
-		verbose && console.log(`Retrieved ${storageKey} from cache. Exp: ${Temporal.Instant.fromEpochMilliseconds(exp).toString()}`);
+		const { value, exp } = JSON.parse(cachedResult) as {
+			value: T;
+			exp: number;
+		};
+		verbose &&
+			console.log(
+				`Retrieved ${storageKey} from cache. Exp: ${
+					Temporal.Instant.fromEpochMilliseconds(exp).toString()
+				}`,
+			);
 		if (Date.now() < exp) return value;
 	}
 	let instant = Temporal.Instant.fromEpochMilliseconds(Date.now());
@@ -54,44 +62,50 @@ async function getSfccAuthToken(): Promise<string> {
 }
 
 type SandboxInfo = {
-	id: string,
-	realm: string,
-	instance: string,
+	id: string;
+	realm: string;
+	instance: string;
 	versions: {
-		app: string,
-		web: string
-	},
-	resourceProfile: string,
-	state: string,
-	createdAt: string,
-	createdBy: string,
-	hostName: string,
+		app: string;
+		web: string;
+	};
+	resourceProfile: string;
+	state: string;
+	createdAt: string;
+	createdBy: string;
+	hostName: string;
 	links: {
-		bm: string,
-		ocapi: string,
-		impex: string,
-		code: string,
-		logs: string
-	}
+		bm: string;
+		ocapi: string;
+		impex: string;
+		code: string;
+		logs: string;
+	};
 };
 
-async function getSandboxList(sfccAuthToken: string): Promise<SandboxInfo[]>{
+async function getSandboxList(sfccAuthToken: string): Promise<SandboxInfo[]> {
 	const res = await fetch(
 		"https://admin.dx.commercecloud.salesforce.com/api/v1/sandboxes?include_deleted=false",
 		{
 			headers: {
 				Authorization: `Bearer ${sfccAuthToken}`,
 				Accept: "application/json",
-			}
-		}
+			},
+		},
 	);
 	const resJson = await res.json();
 
 	if (resJson.code === 200) {
-		resJson.data.sort((a: SandboxInfo, b: SandboxInfo) => a.hostName.localeCompare(b.hostName));
+		resJson.data.sort((a: SandboxInfo, b: SandboxInfo) =>
+			a.hostName.localeCompare(b.hostName)
+		);
 		return resJson.data;
 	} else {
-		console.error('Failed to retrieve sandbox list:', resJson.code, resJson.error.message);
+		console.error(
+			"Failed to retrieve sandbox list:",
+			resJson.code,
+			resJson.error.message,
+		);
 		Deno.exit(1);
 	}
 }
@@ -112,22 +126,64 @@ async function updateSandboxList(invalidate: boolean = false) {
 		() => getSandboxList(sfccAuthToken),
 		"sandboxList",
 		Temporal.Duration.from({ hours: 24 * 14 }), // Workaround for bug in Temporal.Duration
-		invalidate
+		invalidate,
 	);
+}
+
+async function runSandboxOperation(operation: string, sandboxId: string) {
+	const sbInfo = sandboxList.find((sb) => sb.id === sandboxId)!;
+
+	const res = await fetch(
+		`https://admin.dx.commercecloud.salesforce.com/api/v1/sandboxes/${sandboxId}/operations`,
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${sfccAuthToken}`,
+				"Content-Type": "application/json",
+				Accept: "application/json",
+			},
+			body: JSON.stringify({
+				operation
+			}),
+		},
+	);
+	const resJson = await res.json();
+	if (resJson.code === 201) {
+		console.log(`Sandbox ${sbInfo.hostName} ${resJson.data.sandboxState}`);
+	} else {
+		console.log(`Failed to ${operation} sandbox ${sbInfo?.hostName || sandboxId}: ${resJson.code} ${resJson.error.message}`);
+	}
 }
 
 async function run() {
 	await updateToken();
 
-	if (args._.includes('list')) {
+	verbose && console.log('args', args);
+
+	if (args._.includes("list")) {
 		await updateSandboxList(true);
 
-		const sandboxInfoLine = sandboxList.map((sb) => [sb.id, sb.hostName, sb.state].join('|')).join('\n');
+		const sandboxInfoLine = sandboxList.map((sb) =>
+			[sb.id, sb.hostName, sb.state].join("|")
+		).join("\n");
 		console.log(sandboxInfoLine);
 		return;
 	}
 
 	await updateSandboxList();
+
+	if (
+		["start", "stop", "restart"].includes(args._[0].toString()) &&
+		typeof args._[1] === "string"
+	) {
+		const [operation, findStr] = args._;
+		for (const sb of sandboxList) {
+			if (!sb.hostName.includes(findStr) && sb.id !== findStr) continue;
+
+			await runSandboxOperation(operation.toString(), sb.id);
+		}
+		return;
+	}
 }
 
 run();
