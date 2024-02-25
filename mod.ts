@@ -1,12 +1,11 @@
 import { load } from "https://deno.land/std@0.217.0/dotenv/mod.ts";
-import { parseArgs } from "https://deno.land/std@0.217.0/cli/parse_args.ts";
+import { Command, program } from "npm:commander@12.0.0";
 
 const env = await load();
 const SF_API_ID = env.SF_API_ID;
 const SF_API_SECRET = env.SF_API_SECRET;
 
-const args = parseArgs(Deno.args);
-const verbose = args.v || args.verbose;
+let verbose = false;
 
 async function useCachedResult<T>(
 	result: () => Promise<T>,
@@ -143,47 +142,61 @@ async function runSandboxOperation(operation: string, sandboxId: string) {
 				Accept: "application/json",
 			},
 			body: JSON.stringify({
-				operation
+				operation,
 			}),
 		},
 	);
 	const resJson = await res.json();
 	if (resJson.code === 201) {
-		console.log(`Sandbox ${sbInfo.hostName} ${resJson.data.sandboxState}`);
+		console.log(`Triggered ${operation} on ${sbInfo.hostName}`);
 	} else {
-		console.log(`Failed to ${operation} sandbox ${sbInfo?.hostName || sandboxId}: ${resJson.code} ${resJson.error.message}`);
+		console.log(
+			`Failed to ${operation} sandbox ${
+				sbInfo?.hostName || sandboxId
+			}: ${resJson.code} ${resJson.error.message}`,
+		);
 	}
 }
 
 async function run() {
-	await updateToken();
+	function buildSandboxOperationCommand(operation: string) {
+		return new Command(operation)
+			.argument("<sandbox>", "Sandbox ID or a part of the hostname")
+			.action(async function (findStr: string) {
+				for (const sb of sandboxList) {
+					if (!sb.hostName.includes(findStr) && sb.id !== findStr) continue;
 
-	verbose && console.log('args', args);
-
-	if (args._.includes("list")) {
-		await updateSandboxList(true);
-
-		const sandboxInfoLine = sandboxList.map((sb) =>
-			[sb.id, sb.hostName, sb.state].join("|")
-		).join("\n");
-		console.log(sandboxInfoLine);
-		return;
+					await runSandboxOperation(operation, sb.id);
+				}
+			});
 	}
 
+	await updateToken();
 	await updateSandboxList();
 
-	if (
-		["start", "stop", "restart"].includes(args._[0].toString()) &&
-		typeof args._[1] === "string"
-	) {
-		const [operation, findStr] = args._;
-		for (const sb of sandboxList) {
-			if (!sb.hostName.includes(findStr) && sb.id !== findStr) continue;
+	program
+		.name("sfcc-d")
+		.option("-v, --verbose", "Verbose output");
 
-			await runSandboxOperation(operation.toString(), sb.id);
-		}
-		return;
-	}
+	program
+		.command("list")
+		.description("List fresh data for all sandboxes")
+		.action(async () => {
+			await updateSandboxList(true);
+
+			const sandboxInfoLine = sandboxList.map((sb) =>
+				[sb.id, sb.hostName, sb.state].join("|")
+			).join("\n");
+			console.log(sandboxInfoLine);
+		});
+
+	program.addCommand(buildSandboxOperationCommand("start"));
+	program.addCommand(buildSandboxOperationCommand("stop"));
+	program.addCommand(buildSandboxOperationCommand("restart"));
+
+	program.parse();
+
+	verbose = program.opts().verbose;
 }
 
 run();
