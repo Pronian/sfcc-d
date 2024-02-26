@@ -184,9 +184,15 @@ async function run() {
 		.action(async () => {
 			await updateSandboxList(true);
 
-			const sandboxInfoLine = sandboxList.map((sb) =>
-				[sb.id, sb.hostName, sb.state].join("|")
-			).join("\n");
+			const sandboxInfoLine = sandboxList.map((sb) => {
+				let stateEmoji = "";
+
+				if (sb.state === "started") stateEmoji = "🟢";
+				else if (sb.state === "stopped") stateEmoji = "🔴";
+				else stateEmoji = "🟡";
+
+				return `${sb.id}🔹${sb.hostName}${stateEmoji}${sb.state}`;
+			}).join("\n");
 			console.log(sandboxInfoLine);
 		});
 
