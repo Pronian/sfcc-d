@@ -1,11 +1,26 @@
 import { load } from "https://deno.land/std@0.217.0/dotenv/mod.ts";
+import * as log from "https://deno.land/std@0.217.0/log/mod.ts";
 import { Command, program } from "npm:commander@12.0.0";
 
 const env = await load();
 const SF_API_ID = env.SF_API_ID;
 const SF_API_SECRET = env.SF_API_SECRET;
 
-let verbose = false;
+log.setup({
+	handlers: {
+		console: new log.ConsoleHandler("INFO"),
+		file: new log.FileHandler("DEBUG", {
+			filename: "./sfcc-d.log",
+			formatter: (r) => `[${r.datetime.toISOString()}|${r.levelName}] ${r.msg}`,
+		}),
+	},
+	loggers: {
+		default: {
+			level: "DEBUG",
+			handlers: ["console", "file"],
+		},
+	},
+});
 
 async function useCachedResult<T>(
 	result: () => Promise<T>,
@@ -19,12 +34,11 @@ async function useCachedResult<T>(
 			value: T;
 			exp: number;
 		};
-		verbose &&
-			console.log(
-				`Retrieved ${storageKey} from cache. Exp: ${
-					Temporal.Instant.fromEpochMilliseconds(exp).toString()
-				}`,
-			);
+		log.debug(
+			`Retrieved ${storageKey} from cache. Exp: ${
+				Temporal.Instant.fromEpochMilliseconds(exp).toString()
+			}`,
+		);
 		if (Date.now() < exp) return value;
 	}
 	let instant = Temporal.Instant.fromEpochMilliseconds(Date.now());
@@ -34,7 +48,7 @@ async function useCachedResult<T>(
 		storageKey,
 		JSON.stringify({ value: resultValue, exp: instant.epochMilliseconds }),
 	);
-	verbose && console.log(`Cached ${storageKey}. Exp: ${instant.toString()}`);
+	log.debug(`Cached ${storageKey}. Exp: ${instant.toString()}`);
 
 	return resultValue;
 }
@@ -52,11 +66,7 @@ async function getSfccAuthToken(): Promise<string> {
 		},
 	);
 	const json = await res.json();
-	// console.log({
-	// 	res,
-	// 	json,
-	// 	cookies: res.headers.get("set-cookie"),
-	// });
+	log.debug("Auth token response", json);
 	return json.access_token;
 }
 
@@ -148,9 +158,9 @@ async function runSandboxOperation(operation: string, sandboxId: string) {
 	);
 	const resJson = await res.json();
 	if (resJson.code === 201) {
-		console.log(`Triggered ${operation} on ${sbInfo.hostName}`);
+		log.info(`Triggered ${operation} on ${sbInfo.hostName}`);
 	} else {
-		console.log(
+		log.error(
 			`Failed to ${operation} sandbox ${
 				sbInfo?.hostName || sandboxId
 			}: ${resJson.code} ${resJson.error.message}`,
@@ -175,8 +185,7 @@ async function run() {
 	await updateSandboxList();
 
 	program
-		.name("sfcc-d")
-		.option("-v, --verbose", "Verbose output");
+		.name("sfcc-d");
 
 	program
 		.command("list")
@@ -201,8 +210,6 @@ async function run() {
 	program.addCommand(buildSandboxOperationCommand("restart"));
 
 	program.parse();
-
-	verbose = program.opts().verbose;
 }
 
 run();
