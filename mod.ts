@@ -66,7 +66,7 @@ async function getSfccAuthToken(): Promise<string> {
 		},
 	);
 	const json = await res.json();
-	log.debug("Auth token response", json);
+	log.debug(`Auth token response ${JSON.stringify(json)}`);
 	return json.access_token;
 }
 
@@ -210,6 +210,8 @@ async function run() {
 	program.addCommand(buildSandboxOperationCommand("restart"));
 
 	program.parse();
+
+	log.debug(`args: ${program.args}`);
 }
 
 run();
