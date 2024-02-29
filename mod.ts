@@ -1,8 +1,12 @@
 import { load } from "https://deno.land/std@0.217.0/dotenv/mod.ts";
+import { resolve } from "https://deno.land/std@0.217.0/path/mod.ts";
 import * as log from "https://deno.land/std@0.217.0/log/mod.ts";
 import { Command, program } from "npm:commander@12.0.0";
 
-const env = await load();
+const env = await load({
+	envPath: resolve(import.meta.dirname!, "./.env"),
+});
+
 const SF_API_ID = env.SF_API_ID;
 const SF_API_SECRET = env.SF_API_SECRET;
 
@@ -10,7 +14,7 @@ log.setup({
 	handlers: {
 		console: new log.ConsoleHandler("INFO"),
 		file: new log.FileHandler("DEBUG", {
-			filename: "./sfcc-d.log",
+			filename: resolve(import.meta.dirname!, "./sfcc-d.log"),
 			formatter: (r) => `[${r.datetime.toISOString()}|${r.levelName}] ${r.msg}`,
 		}),
 	},
