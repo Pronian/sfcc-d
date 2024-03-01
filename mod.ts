@@ -160,7 +160,16 @@ async function runSandboxOperation(operation: string, sandboxId: string) {
 			}),
 		},
 	);
+
+	if (res.status !== 200 && res.status !== 201) {
+		log.error(
+			`Failed performing sandbox operation: ${res.status} ${res.statusText}`,
+		);
+		Deno.exit(1);
+	}
+
 	const resJson = await res.json();
+
 	if (resJson.code === 201) {
 		log.info(`Triggered ${operation} on ${sbInfo.hostName}`);
 	} else {
