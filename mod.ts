@@ -144,7 +144,7 @@ async function updateSandboxList(invalidate: boolean = false) {
 }
 
 async function runSandboxOperation(operation: string, sandboxId: string) {
-	const sbInfo = sandboxList.find((sb) => sb.id === sandboxId)!;
+	const sb = sandboxList.find((sb) => sb.id === sandboxId)!;
 
 	const res = await fetch(
 		`https://admin.dx.commercecloud.salesforce.com/api/v1/sandboxes/${sandboxId}/operations`,
@@ -171,14 +171,47 @@ async function runSandboxOperation(operation: string, sandboxId: string) {
 	const resJson = await res.json();
 
 	if (resJson.code === 201) {
-		log.info(`Triggered ${operation} on ${sbInfo.hostName}`);
+		log.info(`Triggered ${operation} on ${sb.hostName}`);
 	} else {
 		log.error(
 			`Failed to ${operation} sandbox ${
-				sbInfo?.hostName || sandboxId
+				sb?.hostName || sandboxId
 			}: ${resJson.code} ${resJson.error.message}`,
 		);
 	}
+}
+
+async function getSandboxInfo(sandboxId: string) {
+	const sb = sandboxList.find((sb) => sb.id === sandboxId)!;
+
+	const res = await fetch(
+		`https://admin.dx.commercecloud.salesforce.com/api/v1/sandboxes/${sandboxId}`,
+		{
+			headers: {
+				Authorization: `Bearer ${sfccAuthToken}`,
+				Accept: "application/json",
+			},
+		},
+	);
+
+	if (res.status !== 200) {
+		log.error(
+			`Failed to retrieve sandbox info: ${res.status} ${res.statusText}`,
+		);
+		Deno.exit(1);
+	}
+
+	const resJson = await res.json();
+	log.debug(
+		`Sandbox info for ${sb.hostName}: ${JSON.stringify(resJson.data, null, 2)}`,
+	);
+	return resJson.data;
+}
+
+function getSandboxesByString(findStr: string): SandboxInfo[] {
+	return sandboxList.filter((sb) =>
+		sb.hostName.includes(findStr) || sb.id === findStr
+	);
 }
 
 async function run() {
@@ -186,9 +219,8 @@ async function run() {
 		return new Command(operation)
 			.argument("<sandbox>", "Sandbox ID or a part of the hostname")
 			.action(async function (findStr: string) {
-				for (const sb of sandboxList) {
-					if (!sb.hostName.includes(findStr) && sb.id !== findStr) continue;
-
+				const sbs = getSandboxesByString(findStr);
+				for (const sb of sbs) {
 					await runSandboxOperation(operation, sb.id);
 				}
 			});
@@ -221,6 +253,18 @@ async function run() {
 	program.addCommand(buildSandboxOperationCommand("start"));
 	program.addCommand(buildSandboxOperationCommand("stop"));
 	program.addCommand(buildSandboxOperationCommand("restart"));
+
+	program
+		.command("s-info")
+		.description("Show detailed info for a sandbox")
+		.argument("<sandbox>", "Sandbox ID or a part of the hostname")
+		.action(async function (findStr: string) {
+			const sbs = getSandboxesByString(findStr);
+			for (const sb of sbs) {
+				const info = await getSandboxInfo(sb.id);
+				console.log(info);
+			}
+		});
 
 	program.parse();
 
