@@ -2,6 +2,7 @@ import { load } from "https://deno.land/std@0.217.0/dotenv/mod.ts";
 import { resolve } from "https://deno.land/std@0.217.0/path/mod.ts";
 import * as log from "https://deno.land/std@0.217.0/log/mod.ts";
 import { Command, program } from "npm:commander@12.0.0";
+import { fromFileUrl } from "https://deno.land/std@0.217.0/path/from_file_url.ts";
 
 const env = await load({
 	envPath: resolve(import.meta.dirname!, "./.env"),
@@ -214,6 +215,29 @@ function getSandboxesByString(findStr: string): SandboxInfo[] {
 	);
 }
 
+async function getRealmCredits(realm: string, from: string, to: string) {
+	try {
+		const res = await fetch(
+			`https://admin.dx.commercecloud.salesforce.com/api/v1/realms/${realm}/usage?from=${from}&to=${to}`,
+			{
+				headers: {
+					Accept: "application/json",
+					Authorization: `Bearer ${sfccAuthToken}`,
+				},
+			},
+		);
+		const resJson = await res.json();
+		if (resJson.code !== 200) {
+			log.error("Unsuccessful response from realm credits API", resJson);
+			Deno.exit(1);
+		}
+		return resJson.data;
+	} catch (e) {
+		log.error("Error while getting sandbox usage", e);
+		Deno.exit(1);
+	}
+}
+
 async function run() {
 	function buildSandboxOperationCommand(operation: string) {
 		return new Command(operation)
@@ -264,6 +288,41 @@ async function run() {
 				const info = await getSandboxInfo(sb.id);
 				console.log(info);
 			}
+		});
+
+	program
+		.command("cred")
+		.description("Show credits used by sandboxes for the given realm")
+		.argument("<realm>", "Realm name", (v) => {
+			if (v.length !== 4) {
+				throw new Error("Realm name must be 4 characters long");
+			}
+			return v;
+		})
+		.argument("<time>", "Time period", (v) => {
+			if (v !== "last-month") {
+				throw new Error("Only 'last-month' is supported");
+			}
+			return v;
+		})
+		.action(async (realm: string, time: string) => {
+			let usage;
+			let from;
+			let to;
+			if (time === "last-month") {
+				const now = Temporal.Now.plainDateISO();
+				from = now.with({ day: 1 });
+				from = from.subtract({ months: 1 });
+				to = from.add({ months: 1 }).subtract({ days: 1 });
+				usage = await getRealmCredits(realm, from.toString(), to.toString());
+			}
+			let msg = `Credits used by ${realm} from ${from} to ${to}:\n`;
+			msg += `Minutes up: ${usage.minutesUp}\n`;
+			msg += `Minutes down: ${usage.minutesDown}\n`;
+			msg += `Credits used: ${
+				Math.ceil(usage.minutesUp + usage.minutesDown * 0.3)
+			}\n`;
+			log.info(msg);
 		});
 
 	program.parse();
