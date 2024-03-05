@@ -240,6 +240,8 @@ async function getRealmCredits(realm: string, from: string, to: string) {
 
 async function run() {
 	const fromToRegex = /^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
+	const monthRegex = /^\d{4}-\d{2}$/;
+
 	function buildSandboxOperationCommand(operation: string) {
 		return new Command(operation)
 			.argument("<sandbox>", "Sandbox ID or a part of the hostname")
@@ -301,8 +303,10 @@ async function run() {
 			return v;
 		})
 		.argument("<time>", "Time period", (v) => {
-			if (v !== "last-month" && !fromToRegex.test(v)) {
-				throw new Error("Invalid time period. Use 'last-month' or 'YYYY-MM-DD:YYYY-MM-DD'");
+			if (v !== "last-month" && !monthRegex.test(v) && !fromToRegex.test(v)) {
+				throw new Error(
+					"Invalid time period. Use 'last-month' or 'YYYY-MM' or 'YYYY-MM-DD:YYYY-MM-DD'",
+				);
 			}
 			return v;
 		})
@@ -316,6 +320,12 @@ async function run() {
 				from = from.subtract({ months: 1 });
 				to = from.add({ months: 1 }).subtract({ days: 1 });
 				usage = await getRealmCredits(realm, from.toString(), to.toString());
+			} else if (monthRegex.test(time)) {
+				from = `${time}-01`;
+				to = Temporal.PlainDate.from(from).add({ months: 1 }).subtract({
+					days: 1,
+				});
+				usage = await getRealmCredits(realm, from, to.toString());
 			} else if (fromToRegex.test(time)) {
 				[from, to] = time.split(":");
 				usage = await getRealmCredits(realm, from, to);
