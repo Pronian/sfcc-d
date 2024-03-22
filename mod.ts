@@ -9,6 +9,7 @@ const env = await load({
 
 const SF_API_ID = env.SF_API_ID;
 const SF_API_SECRET = env.SF_API_SECRET;
+const OCAPI_VERSION = "v19_5";
 
 log.setup({
 	handlers: {
@@ -237,6 +238,57 @@ async function getRealmCredits(realm: string, from: string, to: string) {
 	}
 }
 
+type CodeVersion = {
+	_type: string;
+	activation_time: string;
+	active: boolean;
+	cartridges: string[];
+	compatibility_mode: string;
+	id: string;
+	last_modification_time: string;
+	rollback: boolean;
+	web_dav_url: string;
+};
+
+async function getCodeVersions(
+	token: string,
+	host: string,
+): Promise<CodeVersion[]> {
+	const res = await fetch(
+		`https://${host}/s/-/dw/data/${OCAPI_VERSION}/code_versions`,
+		{
+			headers: {
+				Authorization: `Bearer ${token}`,
+				Accept: "application/json",
+			},
+		},
+	);
+
+	if (res.status !== 200) {
+		log.error(
+			`Failed to retrieve code versions: ${res.status} ${res.statusText}`,
+		);
+		Deno.exit(1);
+	}
+
+	const resJson = await res.json();
+
+	if (Array.isArray(resJson.data) === false) {
+		log.error(
+			`Failed to retrieve code versions: ${resJson.code} ${resJson.error.message}`,
+		);
+		Deno.exit(1);
+	}
+
+	const codeVersions: CodeVersion[] = resJson.data;
+
+	codeVersions.sort((a, b) =>
+		a.last_modification_time.localeCompare(b.activation_time)
+	);
+
+	return codeVersions;
+}
+
 async function run() {
 	const fromToRegex = /^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
 	const monthRegex = /^\d{4}-\d{2}$/;
@@ -336,6 +388,21 @@ async function run() {
 				Math.ceil(usage.minutesUp + usage.minutesDown * 0.3)
 			}\n`;
 			log.info(msg);
+		});
+
+	program
+		.command("code-list")
+		.description("List code versions for a given instance")
+		.argument("<host>", "Instance host name")
+		.action(async (host: string) => {
+			const displayCV = (await getCodeVersions(sfccAuthToken, host))
+				.map((cv: CodeVersion) => ({
+					name: cv.id,
+					last_modified: cv.last_modification_time,
+					last_active: cv.activation_time,
+					active: cv.active,
+				}));
+			console.table(displayCV);
 		});
 
 	program.parse();
