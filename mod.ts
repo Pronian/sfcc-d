@@ -1,8 +1,7 @@
-import { load } from "https://deno.land/std@0.217.0/dotenv/mod.ts";
-import { resolve } from "https://deno.land/std@0.217.0/path/mod.ts";
-import * as log from "https://deno.land/std@0.217.0/log/mod.ts";
+import { load } from "https://deno.land/std@0.220.1/dotenv/mod.ts";
+import { resolve } from "https://deno.land/std@0.220.1/path/mod.ts";
+import * as log from "https://deno.land/std@0.220.1/log/mod.ts";
 import { Command, program } from "npm:commander@12.0.0";
-import { fromFileUrl } from "https://deno.land/std@0.217.0/path/from_file_url.ts";
 
 const env = await load({
 	envPath: resolve(import.meta.dirname!, "./.env"),
