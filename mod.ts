@@ -289,6 +289,57 @@ async function getCodeVersions(
 	return codeVersions;
 }
 
+async function activateCodeVersion(
+	token: string,
+	host: string,
+	allCodeVersions: CodeVersion[],
+	codeVersion: string,
+) {
+	allCodeVersions.reverse();
+	const cv = allCodeVersions.find((cv) => cv.id.includes(codeVersion));
+	if (!cv) {
+		log.error(`Code version "${codeVersion}" not found`);
+		Deno.exit(1);
+	} else if (cv.active) {
+		log.info(`Code version "${cv.id}" is already active`);
+		return;
+	}
+
+	const res = await fetch(
+		`https://${host}/s/-/dw/data/${OCAPI_VERSION}/code_versions/${cv.id}`,
+		{
+			method: "PATCH",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+				Accept: "application/json",
+			},
+			body: JSON.stringify({
+				active: true,
+			}),
+		},
+	);
+
+	if (res.status !== 200) {
+		log.error(
+			`Failed to activate code version: ${res.status} ${res.statusText}`,
+		);
+		Deno.exit(1);
+	}
+
+	const resJson = await res.json();
+
+	if (resJson.fault) {
+		log.error(
+			`Failed to activate code version: ${resJson.fault.type} ${resJson.fault.message}`,
+		);
+		Deno.exit(1);
+	}
+
+	log.info(`Activated code version "${cv.id}"`);
+	return;
+}
+
 async function run() {
 	const fromToRegex = /^\d{4}-\d{2}-\d{2}:\d{4}-\d{2}-\d{2}$/;
 	const monthRegex = /^\d{4}-\d{2}$/;
@@ -403,6 +454,16 @@ async function run() {
 					active: cv.active,
 				}));
 			console.table(displayCV);
+		});
+
+	program
+		.command("code-activate")
+		.description("Activate a code version for a given instance")
+		.argument("<host>", "Instance host name")
+		.argument("<codeVersion>", "Code version name or part of it")
+		.action(async (host: string, codeVersion: string) => {
+			const codeVersions = await getCodeVersions(sfccAuthToken, host);
+			await activateCodeVersion(sfccAuthToken, host, codeVersions, codeVersion);
 		});
 
 	program.parse();
