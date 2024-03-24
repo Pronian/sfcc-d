@@ -27,12 +27,20 @@ log.setup({
 	},
 });
 
+/**
+ * Cache the result of a function in local storage
+ * @param result - the function to cache
+ * @param storageKey - the key to store the result in local storage
+ * @param maxDuration - the duration for which the result is valid
+ * @param invalidate - if true, the cache is invalidated
+ * @returns the result of the cached function
+ */
 async function useCachedResult<T>(
 	result: () => Promise<T>,
 	storageKey: string,
 	maxDuration: Temporal.Duration,
 	invalidate: boolean = false,
-) {
+): Promise<T> {
 	const cachedResult = localStorage.getItem(storageKey);
 	if (!invalidate && cachedResult) {
 		const { value, exp } = JSON.parse(cachedResult) as {
@@ -58,6 +66,11 @@ async function useCachedResult<T>(
 	return resultValue;
 }
 
+/**
+ * Uses the Salesforce Client API ID and the Client API secret to get an OAuth token.
+ * This token is used to authenticate with the Salesforce Commerce Cloud API.
+ * @returns the access token for SFCC OCAPI
+ */
 async function getSfccAuthToken(): Promise<string> {
 	const res = await fetch(
 		"https://account.demandware.com:443/dwsso/oauth2/access_token",
@@ -228,12 +241,16 @@ async function getRealmCredits(realm: string, from: string, to: string) {
 		);
 		const resJson = await res.json();
 		if (resJson.code !== 200) {
-			log.error("Unsuccessful response from realm credits API", resJson);
+			log.error(
+				`Unsuccessful response from realm credits API ${
+					JSON.stringify(resJson, null, 2)
+				}`,
+			);
 			Deno.exit(1);
 		}
 		return resJson.data;
-	} catch (e) {
-		log.error("Error while getting sandbox usage", e);
+	} catch (error) {
+		log.error(`Error while getting sandbox usage ${JSON.stringify(error, null, 2)}`);
 		Deno.exit(1);
 	}
 }
@@ -266,7 +283,7 @@ async function getCodeVersions(
 
 	if (res.status !== 200) {
 		log.error(
-			`Failed to retrieve code versions: ${res.status} ${res.statusText}`,
+			`Non-Ok repose for retrieving code versions: ${res.status} ${res.statusText}`,
 		);
 		Deno.exit(1);
 	}
@@ -322,7 +339,7 @@ async function activateCodeVersion(
 
 	if (res.status !== 200) {
 		log.error(
-			`Failed to activate code version: ${res.status} ${res.statusText}`,
+			`Non-Ok repose for activating code version: ${res.status} ${res.statusText}`,
 		);
 		Deno.exit(1);
 	}
@@ -446,7 +463,8 @@ async function run() {
 		.description("List code versions for a given instance")
 		.argument("<host>", "Instance host name")
 		.action(async (host: string) => {
-			const displayCV = (await getCodeVersions(sfccAuthToken, host))
+			const codeVersions = await getCodeVersions(sfccAuthToken, host);
+			const displayCV = codeVersions
 				.map((cv: CodeVersion) => ({
 					name: cv.id,
 					last_modified: cv.last_modification_time,
