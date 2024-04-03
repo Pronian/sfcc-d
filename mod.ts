@@ -300,7 +300,7 @@ async function getCodeVersions(
 	const codeVersions: CodeVersion[] = resJson.data;
 
 	codeVersions.sort((a, b) =>
-		a.last_modification_time.localeCompare(b.activation_time)
+		a.last_modification_time.localeCompare(b.last_modification_time)
 	);
 
 	return codeVersions;
