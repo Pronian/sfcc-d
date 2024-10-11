@@ -1,7 +1,7 @@
-import { load } from "https://deno.land/std@0.220.1/dotenv/mod.ts";
-import { resolve } from "https://deno.land/std@0.220.1/path/mod.ts";
-import * as log from "https://deno.land/std@0.220.1/log/mod.ts";
-import { Command, program } from "npm:commander@12.0.0";
+import { load } from "jsr:@std/dotenv@^0.225.2";
+import { resolve } from "jsr:@std/path@^1.0.6";
+import * as log from "jsr:@std/log@^0.224.9";
+import { Command, program } from "npm:commander@^12.1.0";
 
 const env = await load({
 	envPath: resolve(import.meta.dirname!, "./.env"),
@@ -250,7 +250,9 @@ async function getRealmCredits(realm: string, from: string, to: string) {
 		}
 		return resJson.data;
 	} catch (error) {
-		log.error(`Error while getting sandbox usage ${JSON.stringify(error, null, 2)}`);
+		log.error(
+			`Error while getting sandbox usage ${JSON.stringify(error, null, 2)}`,
+		);
 		Deno.exit(1);
 	}
 }
